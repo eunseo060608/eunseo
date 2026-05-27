@@ -1,0 +1,844 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>카드 매칭 게임</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background: #1a1a2e;
+      color: #eee;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 32px 16px;
+    }
+
+    .container { width: 100%; max-width: 640px; }
+
+    h1 { font-size: 26px; margin-bottom: 4px; }
+    .subtitle { color: #aaa; margin-bottom: 20px; font-size: 14px; }
+
+    .difficulty-row {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 8px 18px;
+      border-radius: 8px;
+      border: 1px solid #444;
+      background: #2a2a3e;
+      color: #ccc;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.15s;
+    }
+    button:hover:not(:disabled) { background: #3a3a5e; }
+    button:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    button.active {
+      background: #4a7aff;
+      color: #fff;
+      border-color: #4a7aff;
+    }
+    button.hint-btn {
+      background: #3d2a5c;
+      border-color: #7c5cbf;
+      color: #e0d0ff;
+    }
+    button.hint-btn:hover:not(:disabled) {
+      background: #4e3875;
+    }
+
+    .stats {
+      display: flex;
+      gap: 28px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .stat { text-align: left; }
+    .stat-label {
+      font-size: 11px;
+      color: #888;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .stat-value { font-size: 20px; font-weight: 700; }
+    .stat-value.best { color: #4aff8a; }
+
+    hr { border: none; border-top: 1px solid #333; margin-bottom: 20px; }
+
+    .board-wrap {
+      position: relative;
+      margin-bottom: 20px;
+    }
+
+    .board {
+      display: grid;
+      gap: 10px;
+      justify-items: center;
+    }
+
+    #fx-overlay {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 9999;
+      overflow: hidden;
+    }
+
+  .fx-star {
+      position: absolute;
+      font-size: 16px;
+      line-height: 1;
+      pointer-events: none;
+      animation: star-pop 0.75s ease-out forwards;
+    }
+    @keyframes star-pop {
+      0% {
+        transform: translate(0, 0) scale(0) rotate(0deg);
+        opacity: 1;
+      }
+      100% {
+        transform: translate(var(--tx), var(--ty)) scale(1.2) rotate(var(--rot));
+        opacity: 0;
+      }
+    }
+
+    .fx-ring {
+      position: absolute;
+      width: 20px;
+      height: 20px;
+      margin: -10px 0 0 -10px;
+      border: 2px solid #f9e01b;
+      border-radius: 50%;
+      animation: ring-burst 0.6s ease-out forwards;
+    }
+    @keyframes ring-burst {
+      0% { transform: scale(0.3); opacity: 1; }
+      100% { transform: scale(4); opacity: 0; }
+    }
+
+    .fx-smoke {
+      position: absolute;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(80,80,90,0.55) 0%, rgba(20,20,25,0) 70%);
+      pointer-events: none;
+      animation: smoke-rise 0.9s ease-out forwards;
+    }
+    @keyframes smoke-rise {
+      0% {
+        transform: translate(0, 0) scale(0.4);
+        opacity: 0.85;
+      }
+      100% {
+        transform: translate(var(--sx), var(--sy)) scale(1.8);
+        opacity: 0;
+      }
+    }
+
+    .card.shake {
+      animation: card-shake 0.45s ease-in-out;
+    }
+    @keyframes card-shake {
+      0%, 100% { transform: translateX(0); }
+      20% { transform: translateX(-4px); }
+      40% { transform: translateX(4px); }
+      60% { transform: translateX(-3px); }
+      80% { transform: translateX(3px); }
+    }
+
+    /* 3D flip card */
+    .card {
+      width: 72px;
+      height: 96px;
+      perspective: 700px;
+      cursor: pointer;
+      user-select: none;
+      position: relative;
+    }
+    .card.matched {
+      opacity: 0.55;
+      cursor: default;
+    }
+    .card.disabled { pointer-events: none; }
+
+    .card-inner {
+      width: 100%;
+      height: 100%;
+      position: relative;
+      transform-style: preserve-3d;
+      transition: transform 0.55s cubic-bezier(0.4, 0.2, 0.2, 1);
+      border-radius: 10px;
+    }
+    .card-inner.flipped {
+      transform: rotateY(180deg);
+    }
+  .card.hint-glow .card-inner {
+      box-shadow: 0 0 0 3px #f9e01b, 0 0 16px rgba(249, 224, 27, 0.5);
+    }
+
+    .card-face {
+      position: absolute;
+      inset: 0;
+      border-radius: 10px;
+      backface-visibility: hidden;
+      -webkit-backface-visibility: hidden;
+      border: 2px solid #444;
+      overflow: hidden;
+    }
+    .card.matched .card-face { border-color: #4a7aff; }
+
+    /* back */
+    .card-back {
+      transform: rotateY(0deg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .back-bg { position: absolute; inset: 0; background: #c0392b; }
+    .back-oval {
+      position: absolute;
+      width: 86px;
+      height: 52px;
+      border-radius: 999px;
+      background: #e67e22;
+      transform: rotate(-18deg);
+    }
+    .back-oval-border {
+      position: absolute;
+      width: 90px;
+      height: 56px;
+      border-radius: 999px;
+      border: 3px solid #f9e01b;
+      transform: rotate(-18deg);
+    }
+    .back-text {
+      position: absolute;
+      font-size: 20px;
+      font-weight: 900;
+      letter-spacing: 2px;
+      color: #fff;
+      transform: rotate(-18deg);
+      z-index: 1;
+    }
+
+    /* front */
+    .card-front {
+      transform: rotateY(180deg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #242438;
+      font-size: 36px;
+    }
+    .card.matched .card-front { background: #1e2a4a; }
+
+    .result { text-align: center; padding: 24px 0; }
+    .result h2 { font-size: 22px; margin-bottom: 8px; }
+    .result p { color: #aaa; margin-bottom: 6px; font-size: 14px; }
+    .result .record { color: #4a7aff; font-size: 13px; margin-bottom: 16px; }
+
+    .bottom-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .record-panel {
+      margin-top: 8px;
+      margin-bottom: 16px;
+      padding: 14px 16px;
+      background: #222238;
+      border-radius: 10px;
+      border: 1px solid #333;
+    }
+    .record-panel h3 {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 10px;
+      font-weight: 600;
+    }
+    .record-best {
+      display: flex;
+      gap: 20px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .record-best span {
+      font-size: 14px;
+      color: #ccc;
+    }
+    .record-best strong {
+      color: #4aff8a;
+      font-weight: 700;
+    }
+    .record-list {
+      list-style: none;
+      max-height: 140px;
+      overflow-y: auto;
+      font-size: 13px;
+    }
+    .record-list li {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 0;
+      border-bottom: 1px solid #2e2e44;
+      color: #aaa;
+    }
+    .record-list li:last-child { border-bottom: none; }
+    .record-list li.is-best {
+      color: #f9e01b;
+    }
+    .record-list li .tag-best {
+      font-size: 11px;
+      color: #f9e01b;
+      margin-left: 6px;
+    }
+    .record-empty {
+      font-size: 13px;
+      color: #666;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>카드 매칭 게임</h1>
+  <p class="subtitle">같은 동물이 그려진 카드 두 장을 찾으세요</p>
+
+  <div class="difficulty-row">
+    <button id="btn-easy" class="active" onclick="startGame('easy')">쉬움 (10장)</button>
+    <button id="btn-normal" onclick="startGame('normal')">보통 (16장)</button>
+    <button id="btn-hard" onclick="startGame('hard')">어려움 (24장)</button>
+  </div>
+
+  <div class="stats">
+    <div class="stat">
+      <div class="stat-label">시도 횟수</div>
+      <div class="stat-value" id="stat-moves">0</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">경과 시간</div>
+      <div class="stat-value" id="stat-time">0:00</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">맞춘 쌍</div>
+      <div class="stat-value" id="stat-matched">0 / 5</div>
+    </div>
+    <div class="stat">
+      <div class="stat-label">힌트 남음</div>
+      <div class="stat-value" id="stat-hints">3</div>
+    </div>
+  </div>
+
+  <div class="record-panel" id="record-panel">
+    <h3 id="record-panel-title">쉬움 기록</h3>
+    <div class="record-best" id="record-best">
+      <span>최고: 아직 없음</span>
+    </div>
+    <ul class="record-list" id="record-list"></ul>
+  </div>
+
+  <hr />
+
+  <div class="board-wrap">
+    <div id="board" class="board"></div>
+  </div>
+  <div id="fx-overlay"></div>
+  <div id="result" class="result" style="display:none"></div>
+
+  <div class="bottom-row">
+    <button id="btn-hint" class="hint-btn" onclick="useHint()">힌트 보기 (3)</button>
+    <button onclick="startGame(currentDiff)">새 게임</button>
+  </div>
+</div>
+
+<script>
+  const ANIMALS = ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐸"];
+  const DIFFICULTY = {
+    easy:   { pairs: 5,  cols: 5 },
+    normal: { pairs: 8,  cols: 4 },
+    hard:   { pairs: 12, cols: 6 },
+  };
+  const MAX_HINTS = 3;
+  const HINT_SHOW_MS = 1800;
+  const MISMATCH_HIDE_MS = 900;
+  const MAX_HISTORY = 15;
+  const DIFF_LABEL = { easy: '쉬움', normal: '보통', hard: '어려움' };
+
+  let currentDiff = 'easy';
+  let cards = [];
+  let flipped = [];
+  let matched = new Set();
+  let moves = 0;
+  let lock = false;
+  let hintsLeft = MAX_HINTS;
+  let hintActive = false;
+  let startedAt = null;
+  let timerInterval = null;
+  let elapsedMs = 0;
+
+  function loadRecords() {
+    try {
+      const raw = localStorage.getItem('cardRecords');
+      if (raw) return JSON.parse(raw);
+    } catch (_) {}
+    const records = { best: {}, history: { easy: [], normal: [], hard: [] } };
+    try {
+      const old = JSON.parse(localStorage.getItem('cardBest') || '{}');
+      for (const diff of ['easy', 'normal', 'hard']) {
+        if (typeof old[diff] === 'number') {
+          records.best[diff] = { moves: old[diff], timeMs: null };
+        }
+      }
+    } catch (_) {}
+    return records;
+  }
+
+  let gameRecords = loadRecords();
+
+  function saveRecords() {
+    localStorage.setItem('cardRecords', JSON.stringify(gameRecords));
+  }
+
+  function formatTime(ms) {
+    const s = Math.floor(ms / 1000);
+    const m = Math.floor(s / 60);
+    const r = s % 60;
+    return m + ':' + String(r).padStart(2, '0');
+  }
+
+  function formatDate(iso) {
+    const d = new Date(iso);
+    return (d.getMonth() + 1) + '/' + d.getDate() + ' ' +
+      String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  function isBetterRun(a, b) {
+    if (!b) return true;
+    if (a.moves !== b.moves) return a.moves < b.moves;
+    if (a.timeMs == null || b.timeMs == null) return a.moves <= b.moves;
+    return a.timeMs < b.timeMs;
+  }
+
+  function sameRun(a, b) {
+    return a.moves === b.moves && a.timeMs === b.timeMs;
+  }
+
+  function shuffle(arr) {
+    const a = [...arr];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function makeCards(pairs) {
+    const syms = ANIMALS.slice(0, pairs);
+    const deck = [];
+    syms.forEach((s, idx) => {
+      deck.push({ id: idx * 2,     symbol: s, pairId: idx });
+      deck.push({ id: idx * 2 + 1, symbol: s, pairId: idx });
+    });
+    return shuffle(deck);
+  }
+
+  function startGame(diff) {
+    currentDiff = diff;
+    ['easy','normal','hard'].forEach(d => {
+      document.getElementById('btn-' + d).classList.toggle('active', d === diff);
+    });
+
+    cards = makeCards(DIFFICULTY[diff].pairs);
+    flipped = [];
+    matched = new Set();
+    moves = 0;
+    lock = false;
+    hintsLeft = MAX_HINTS;
+    hintActive = false;
+    startedAt = null;
+    elapsedMs = 0;
+    stopTimer();
+
+    updateStats();
+    renderRecordPanel();
+    renderBoard();
+    document.getElementById('result').style.display = 'none';
+    document.getElementById('board').style.display = '';
+  }
+
+  function startTimer() {
+    if (startedAt !== null) return;
+    startedAt = Date.now();
+    timerInterval = setInterval(() => {
+      elapsedMs = Date.now() - startedAt;
+      document.getElementById('stat-time').textContent = formatTime(elapsedMs);
+    }, 200);
+  }
+
+  function stopTimer() {
+    if (timerInterval) {
+      clearInterval(timerInterval);
+      timerInterval = null;
+    }
+    if (startedAt !== null) {
+      elapsedMs = Date.now() - startedAt;
+      startedAt = null;
+    }
+  }
+
+  function updateStats() {
+    const cfg = DIFFICULTY[currentDiff];
+    document.getElementById('stat-moves').textContent = moves;
+    document.getElementById('stat-matched').textContent = matched.size + ' / ' + cfg.pairs;
+    document.getElementById('stat-hints').textContent = hintsLeft;
+    document.getElementById('stat-time').textContent = formatTime(elapsedMs);
+
+    const hintBtn = document.getElementById('btn-hint');
+    hintBtn.textContent = '힌트 보기 (' + hintsLeft + ')';
+    hintBtn.disabled = hintsLeft <= 0 || lock || hintActive || matched.size === cfg.pairs;
+  }
+
+  function renderRecordPanel() {
+    const diff = currentDiff;
+    document.getElementById('record-panel-title').textContent =
+      DIFF_LABEL[diff] + ' 플레이 기록';
+
+    const best = gameRecords.best[diff];
+    const bestEl = document.getElementById('record-best');
+    if (best) {
+      const timeStr = best.timeMs != null ? formatTime(best.timeMs) : '-';
+      bestEl.innerHTML =
+        '<span>최고 시도: <strong>' + best.moves + '회</strong></span>' +
+        '<span>최고 시간: <strong>' + timeStr + '</strong></span>';
+    } else {
+      bestEl.innerHTML = '<span>최고: 아직 없음</span>';
+    }
+
+    const list = document.getElementById('record-list');
+    const history = gameRecords.history[diff] || [];
+    if (history.length === 0) {
+      list.innerHTML = '<li class="record-empty">완료한 기록이 없습니다. 클리어하면 여기에 쌓입니다.</li>';
+      return;
+    }
+
+    list.innerHTML = history.map((entry, i) => {
+      const isBest = best && sameRun(entry, best);
+      const timeStr = entry.timeMs != null ? formatTime(entry.timeMs) : '-';
+      return '<li class="' + (isBest ? 'is-best' : '') + '">' +
+        '<span>' + entry.moves + '회 · ' + timeStr +
+        (isBest ? '<span class="tag-best">최고</span>' : '') + '</span>' +
+        '<span>' + formatDate(entry.at) + '</span>' +
+        '</li>';
+    }).join('');
+  }
+
+  function addPlayRecord(diff, runMoves, runTimeMs) {
+    if (!gameRecords.history[diff]) gameRecords.history[diff] = [];
+    const entry = {
+      moves: runMoves,
+      timeMs: runTimeMs,
+      at: new Date().toISOString(),
+    };
+    gameRecords.history[diff].unshift(entry);
+    if (gameRecords.history[diff].length > MAX_HISTORY) {
+      gameRecords.history[diff] = gameRecords.history[diff].slice(0, MAX_HISTORY);
+    }
+
+    const prevBest = gameRecords.best[diff];
+    if (isBetterRun(entry, prevBest)) {
+      gameRecords.best[diff] = { moves: entry.moves, timeMs: entry.timeMs };
+      return true;
+    }
+    return false;
+  }
+
+  function renderBoard() {
+    const cfg = DIFFICULTY[currentDiff];
+    const board = document.getElementById('board');
+    board.style.gridTemplateColumns = `repeat(${cfg.cols}, 72px)`;
+    board.innerHTML = '';
+
+    cards.forEach(card => {
+      const el = document.createElement('div');
+      el.className = 'card';
+      el.dataset.id = card.id;
+
+      const inner = document.createElement('div');
+      inner.className = 'card-inner';
+
+      const back = document.createElement('div');
+      back.className = 'card-face card-back';
+      back.innerHTML = `
+        <div class="back-bg"></div>
+        <div class="back-oval"></div>
+        <div class="back-oval-border"></div>
+        <div class="back-text">UNO</div>
+      `;
+
+      const front = document.createElement('div');
+      front.className = 'card-face card-front';
+      front.textContent = card.symbol;
+
+      inner.appendChild(back);
+      inner.appendChild(front);
+      el.appendChild(inner);
+      el.addEventListener('click', () => handleClick(card.id));
+      board.appendChild(el);
+    });
+  }
+
+  function getEl(cardId) {
+    return document.querySelector(`.card[data-id="${cardId}"]`);
+  }
+
+  function getCardCenter(cardId) {
+    const el = getEl(cardId);
+    if (!el) return { x: window.innerWidth / 2, y: window.innerHeight / 2 };
+    const r = el.getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }
+
+  function playMatchChime() {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const notes = [523.25, 659.25, 783.99, 1046.5];
+      notes.forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0, ctx.currentTime + i * 0.07);
+        gain.gain.linearRampToValueAtTime(0.12, ctx.currentTime + i * 0.07 + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + i * 0.07 + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(ctx.currentTime + i * 0.07);
+        osc.stop(ctx.currentTime + i * 0.07 + 0.3);
+      });
+    } catch (_) {}
+  }
+
+  function spawnStarBurst(x, y) {
+    const overlay = document.getElementById('fx-overlay');
+    const stars = ['✦', '★', '✨', '⭐', '·'];
+    const colors = ['#fff9c4', '#f9e01b', '#ffeb3b', '#ffffff', '#ffe082'];
+
+    const ring = document.createElement('div');
+    ring.className = 'fx-ring';
+    ring.style.left = x + 'px';
+    ring.style.top = y + 'px';
+    overlay.appendChild(ring);
+    setTimeout(() => ring.remove(), 650);
+
+    for (let i = 0; i < 14; i++) {
+      const p = document.createElement('div');
+      p.className = 'fx-star';
+      p.textContent = stars[i % stars.length];
+      p.style.left = x + 'px';
+      p.style.top = y + 'px';
+      p.style.color = colors[i % colors.length];
+      const angle = (Math.PI * 2 * i) / 14 + Math.random() * 0.4;
+      const dist = 35 + Math.random() * 45;
+      p.style.setProperty('--tx', Math.cos(angle) * dist + 'px');
+      p.style.setProperty('--ty', Math.sin(angle) * dist + 'px');
+      p.style.setProperty('--rot', (Math.random() * 360 - 180) + 'deg');
+      p.style.fontSize = (12 + Math.random() * 10) + 'px';
+      overlay.appendChild(p);
+      setTimeout(() => p.remove(), 800);
+    }
+  }
+
+  function spawnSmoke(x, y) {
+    const overlay = document.getElementById('fx-overlay');
+    for (let i = 0; i < 10; i++) {
+      const p = document.createElement('div');
+      p.className = 'fx-smoke';
+      const size = 14 + Math.random() * 22;
+      p.style.width = size + 'px';
+      p.style.height = size + 'px';
+      p.style.left = (x - size / 2 + (Math.random() - 0.5) * 30) + 'px';
+      p.style.top = (y - size / 2 + (Math.random() - 0.5) * 16) + 'px';
+      p.style.setProperty('--sx', ((Math.random() - 0.5) * 24) + 'px');
+      p.style.setProperty('--sy', (-20 - Math.random() * 35) + 'px');
+      overlay.appendChild(p);
+      setTimeout(() => p.remove(), 950);
+    }
+  }
+
+  function effectOnMatch(idA, idB) {
+    playMatchChime();
+    const ca = getCardCenter(idA);
+    const cb = getCardCenter(idB);
+    const mid = { x: (ca.x + cb.x) / 2, y: (ca.y + cb.y) / 2 };
+    spawnStarBurst(mid.x, mid.y);
+    spawnStarBurst(ca.x, ca.y);
+    spawnStarBurst(cb.x, cb.y);
+  }
+
+  function effectOnMismatch(idA, idB) {
+    [idA, idB].forEach(id => {
+      const el = getEl(id);
+      if (el) {
+        el.classList.add('shake');
+        setTimeout(() => el.classList.remove('shake'), 500);
+      }
+      const c = getCardCenter(id);
+      spawnSmoke(c.x, c.y);
+    });
+  }
+
+  function setFlippedUI(cardId, show) {
+    const el = getEl(cardId);
+    if (!el) return;
+    el.querySelector('.card-inner').classList.toggle('flipped', show);
+  }
+
+  function setMatchedUI(cardId) {
+    const el = getEl(cardId);
+    if (!el) return;
+    el.classList.add('matched');
+    el.querySelector('.card-inner').classList.add('flipped');
+  }
+
+  function setBoardDisabled(disabled) {
+    document.querySelectorAll('.card').forEach(el => {
+      if (!el.classList.contains('matched')) {
+        el.classList.toggle('disabled', disabled);
+      }
+    });
+  }
+
+  function findRandomUnmatchedPair() {
+    const cfg = DIFFICULTY[currentDiff];
+    const unmatchedPairIds = [];
+    for (let pid = 0; pid < cfg.pairs; pid++) {
+      if (!matched.has(pid)) unmatchedPairIds.push(pid);
+    }
+    if (unmatchedPairIds.length === 0) return null;
+    const pairId = unmatchedPairIds[Math.floor(Math.random() * unmatchedPairIds.length)];
+    const pairCards = cards.filter(c => c.pairId === pairId);
+    return pairCards.map(c => c.id);
+  }
+
+  function useHint() {
+    if (lock || hintActive || hintsLeft <= 0) return;
+    const pairIds = findRandomUnmatchedPair();
+    if (!pairIds) return;
+
+    hintsLeft--;
+    hintActive = true;
+    lock = true;
+    updateStats();
+    setBoardDisabled(true);
+
+    pairIds.forEach(id => {
+      const el = getEl(id);
+      if (el) el.classList.add('hint-glow');
+      setFlippedUI(id, true);
+    });
+
+    setTimeout(() => {
+      pairIds.forEach(id => {
+        if (!matched.has(cards.find(c => c.id === id).pairId)) {
+          setFlippedUI(id, false);
+        }
+        const el = getEl(id);
+        if (el) el.classList.remove('hint-glow');
+      });
+      hintActive = false;
+      lock = false;
+      setBoardDisabled(false);
+      updateStats();
+    }, HINT_SHOW_MS);
+  }
+
+  function handleClick(cardId) {
+    if (lock || hintActive) return;
+    if (flipped.includes(cardId)) return;
+    const card = cards.find(c => c.id === cardId);
+    if (matched.has(card.pairId)) return;
+
+    startTimer();
+    flipped.push(cardId);
+    setFlippedUI(cardId, true);
+
+    if (flipped.length === 2) {
+      moves++;
+      lock = true;
+      setBoardDisabled(true);
+      updateStats();
+
+      const [a, b] = flipped.map(id => cards.find(c => c.id === id));
+
+      if (a.pairId === b.pairId) {
+        effectOnMatch(a.id, b.id);
+        setTimeout(() => {
+          matched.add(a.pairId);
+          setMatchedUI(a.id);
+          setMatchedUI(b.id);
+          flipped = [];
+          lock = false;
+          setBoardDisabled(false);
+          updateStats();
+
+          const cfg = DIFFICULTY[currentDiff];
+          if (matched.size === cfg.pairs) {
+            stopTimer();
+            const finalTime = elapsedMs;
+            const isRecord = addPlayRecord(currentDiff, moves, finalTime);
+            saveRecords();
+            updateStats();
+            renderRecordPanel();
+            showResult(isRecord, finalTime);
+          }
+        }, 400);
+      } else {
+        effectOnMismatch(a.id, b.id);
+        setTimeout(() => {
+          flipped.forEach(id => setFlippedUI(id, false));
+          flipped = [];
+          lock = false;
+          setBoardDisabled(false);
+          updateStats();
+        }, MISMATCH_HIDE_MS);
+      }
+    } else {
+      updateStats();
+    }
+  }
+
+  function showResult(isRecord, finalTime) {
+    document.getElementById('board').style.display = 'none';
+    const result = document.getElementById('result');
+    result.style.display = '';
+    const best = gameRecords.best[currentDiff];
+    let bestLine = '';
+    if (best) {
+      bestLine = '<p style="color:#888;font-size:13px;margin-top:6px">최고 기록: ' +
+        best.moves + '회 · ' + formatTime(best.timeMs || 0) + '</p>';
+    }
+    result.innerHTML = `
+      <h2>완성!</h2>
+      <p>${moves}번 · ${formatTime(finalTime)} 만에 클리어했습니다.</p>
+      ${isRecord ? '<p class="record">신기록 달성! 기록이 갱신되었습니다.</p>' : ''}
+      ${bestLine}
+      <button onclick="startGame(currentDiff)">다시 하기</button>
+    `;
+  }
+
+  startGame('easy');
+</script>
+</body>
+</html>
